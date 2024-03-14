@@ -2,14 +2,22 @@ import requests
 import pymysql.cursors
 import os
 from dotenv import load_dotenv
+
+# Load environment variables
 load_dotenv()
 
+# Create database connection pool
+db_pool = None
+
 def connect_db():
-    return pymysql.connect(host=os.getenv('DB_HOST'),
-                           user=os.getenv('DB_USER'),
-                           password=os.getenv('DB_PASSWORD'),
-                           database=os.getenv('DB_DATABASE'),
-                           cursorclass=pymysql.cursors.DictCursor)
+    global db_pool
+    if not db_pool:
+        db_pool = pymysql.connect(host=os.getenv('DB_HOST'),
+                                   user=os.getenv('DB_USER'),
+                                   password=os.getenv('DB_PASSWORD'),
+                                   database=os.getenv('DB_DATABASE'),
+                                   cursorclass=pymysql.cursors.DictCursor)
+    return db_pool
 
 def fetch_and_store_users():
     try:
@@ -18,13 +26,14 @@ def fetch_and_store_users():
 
         # Make an HTTP request to fetch users' data from the API
         response = requests.get("https://dummyapi.io/data/v1/user", headers={"app-id": app_id})
-        users = response.json()['data']
+        users = response.json().get('data', [])
 
         # Insert users' data into the MySQL database
         with db.cursor() as cursor:
             for user in users:
+                email = user.get('email', '')  # Ensure email field is present or use empty string
                 cursor.execute("INSERT INTO user (id, name, email) VALUES (%s, %s, %s)",
-                               (user['id'], user['firstName'] + " " + user['lastName'], user['email']))
+                               (user.get('id'), f"{user.get('firstName')} {user.get('lastName')}", email))
             db.commit()
 
         return True
@@ -46,13 +55,13 @@ def fetch_and_store_posts_for_users():
             # Make a request to the API to fetch corresponding posts data for the user
             response = requests.get(f"https://dummyapi.io/data/v1/user/{user['id']}/post",
                                     headers={"app-id": os.getenv('APP_ID')})
-            posts = response.json()['data']
+            posts = response.json().get('data', [])
 
             # Insert posts data into the database
             with db.cursor() as cursor:
                 for post in posts:
                     cursor.execute("INSERT INTO posts (user_id, title, body) VALUES (%s, %s, %s)",
-                                   (user['id'], post['title'], post['body']))
+                                   (user['id'], post.get('title'), post.get('body')))
                 db.commit()
 
         return True
